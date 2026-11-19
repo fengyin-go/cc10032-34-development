@@ -165,6 +165,91 @@ class SinkOutputService(BaseModuleService):
             "retried_success": retried,
         }
 
+    # ---- 批次对账：读取聚合落库数据并重新计算 ----
+
+    def reconcile_batch(self, batch_id: str) -> dict[str, Any]:
+        """批次对账报告：读取聚合落库数据，重新计算成功、失败和分区统计。
+
+        对账报告绑定检查点快照，供结果落地页面判断批次是否完整可发布。
+        """
+        records = [
+            r for r in store.rows(self.MODULE)
+            if r.get("batch_id") == batch_id
+        ]
+        reconcile = next(
+            (b for b in store.rows("batch_reconcile")
+             if b.get("batch_id") == batch_id or b.get("批次号") == batch_id),
+            None,
+        )
+        if not records and reconcile is None:
+            return {"ok": False, "error": f"批次「{batch_id}」没有聚合落库数据"}
+
+        success = sum(1 for r in records if r.get("write_status") == "success")
+        failed = len(records) - success
+        partitions: dict[str, dict[str, int]] = {}
+        for r in records:
+            part = str(r.get("partition", ""))
+            stat = partitions.setdefault(part, {"success": 0, "failed": 0})
+            stat["success" if r.get("write_status") == "success" else "failed"] += 1
+        failed_partitions = sorted(p for p, s in partitions.items() if s["failed"] > 0)
+
+        # 绑定检查点快照
+        checkpoint = None
+        for row in store.rows("checkpoint_mgr"):
+            states = row.get("operator_states") or {}
+            if row.get("checkpoint_id") == f"cp_{batch_id}" or states.get("batch_id") == batch_id:
+                checkpoint = row
+                break
+
+        publishable = (
+            failed == 0
+            and checkpoint is not None
+            and bool(checkpoint.get("frozen"))
+        )
+        return {
+            "ok": True,
+            "batch_id": batch_id,
+            "total": len(records),
+            "success": success,
+            "failed": failed,
+            "partitions": partitions,
+            "failed_partitions": failed_partitions,
+            "checkpoint_id": (checkpoint or {}).get("checkpoint_id"),
+            "checkpoint_snapshot_ts": (checkpoint or {}).get("snapshot_ts"),
+            "checkpoint_frozen": bool((checkpoint or {}).get("frozen")),
+            "publishable": publishable,
+            "status": (reconcile or {}).get("status"),
+            "version": (reconcile or {}).get("version", 1),
+        }
+
+    def batch_completeness_report(self, batch_id: str) -> dict[str, Any]:
+        """输出完整性报告：按批次核对聚合落库数据是否完整可发布。"""
+        records = [
+            r for r in store.rows(self.MODULE)
+            if r.get("batch_id") == batch_id
+        ]
+        reconcile = next(
+            (b for b in store.rows("batch_reconcile")
+             if b.get("batch_id") == batch_id or b.get("批次号") == batch_id),
+            None,
+        )
+        if not records and reconcile is None:
+            return {"ok": False, "error": f"批次「{batch_id}」不存在"}
+
+        expected = int((reconcile or {}).get("read_count", len(records)))
+        success = sum(1 for r in records if r.get("write_status") == "success")
+        failed = len(records) - success
+        return {
+            "ok": True,
+            "batch_id": batch_id,
+            "expected": expected,
+            "actual": len(records),
+            "success": success,
+            "failed": failed,
+            "complete": len(records) >= expected and failed == 0,
+            "publishable": bool((reconcile or {}).get("publishable")),
+        }
+
     def list_sink_destinations(self) -> list[dict[str, Any]]:
         """列出所有活跃的输出目标和状态。"""
         configs = [

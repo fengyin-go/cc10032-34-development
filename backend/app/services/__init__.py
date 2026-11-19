@@ -22,6 +22,7 @@ from app.services.task_topology import TaskTopologyService
 from app.services.data_sampler import DataSamplerService
 from app.services.debug_trace import DebugTraceService
 from app.services.aggregate_sink import AggregateSinkService
+from app.services.batch_reconcile import BatchReconcileService
 from app.services.stream_job import StreamJobService
 from app.services.anomaly_detector import AnomalyDetectorService
 from app.services.replay_engine import ReplayEngineService
@@ -47,6 +48,7 @@ SERVICES: dict[str, BaseModuleService] = {
     "data_sampler": DataSamplerService(),
     "debug_trace": DebugTraceService(),
     "aggregate_sink": AggregateSinkService(),
+    "batch_reconcile": BatchReconcileService(),
     "stream_job": StreamJobService(),
     "anomaly_detector": AnomalyDetectorService(),
     "replay_engine": ReplayEngineService(),

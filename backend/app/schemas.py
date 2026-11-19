@@ -29,3 +29,20 @@ class EntryPayload(BaseModel):
 class ActionPayload(BaseModel):
     action: str
     remark: str | None = None
+
+
+class FlushBatchPayload(BaseModel):
+    """聚合批次写入请求：复核人员在聚合任务页面发起。"""
+    task_name: str
+    batch_id: str | None = None
+    records: list[dict[str, Any]] | None = None
+
+
+class RetryBatchPayload(BaseModel):
+    batch_id: str
+
+
+class MigrationSwitchPayload(BaseModel):
+    """序号34迁移切换请求：默认切换序号为 34。"""
+    switch_id: str = "34"
+    task_name: str | None = None
